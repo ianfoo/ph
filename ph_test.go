@@ -201,7 +201,7 @@ func TestTrack_String(t *testing.T) {
 				StartTime:       time.Now().Add(-dur),
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
-			want: "Phish - Mercury (Sun 14-Jul-2019) (started 1m30s ago)\nhttps://relisten.net/phish/2019/07/14",
+			want: "Phish - Mercury (Sun 14-Jul-2019) (started 1m30s ago)",
 		},
 		{
 			desc: "no start time",
@@ -210,7 +210,7 @@ func TestTrack_String(t *testing.T) {
 				Title:           "Mercury",
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
-			want: "Phish - Mercury (Sun 14-Jul-2019)\nhttps://relisten.net/phish/2019/07/14",
+			want: "Phish - Mercury (Sun 14-Jul-2019)",
 		},
 		{
 			desc: "no performance time",
@@ -219,6 +219,11 @@ func TestTrack_String(t *testing.T) {
 				Title: "Mercury",
 			},
 			want: "Phish - Mercury",
+		},
+		{
+			desc:  "no band name",
+			track: Track{Title: "Dogs Stole Things"},
+			want:  "Dogs Stole Things",
 		},
 	}
 	for _, tc := range tt {

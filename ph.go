@@ -28,7 +28,7 @@ func main() {
 
 func run() error {
 	var lastN uint
-	flag.UintVar(&lastN, "last", 0, "Show this many latest songs (0 means current song)")
+	flag.UintVar(&lastN, "last", 1, "Show this many latest songs (0 shows entire available history)")
 	flag.Parse()
 
 	resp, err := http.Get(urlJEMP)
@@ -41,13 +41,20 @@ func run() error {
 		return fmt.Errorf("parsing status response: %w", err)
 	}
 
-	if lastN == 0 {
+	if lastN == 1 {
 		fmt.Println(status.CurrentTrack)
+		if streamURL := status.CurrentTrack.StreamingURL(); streamURL != "" {
+			fmt.Println(streamURL)
+		}
 		return nil
 	}
 	lastNTracks := status.LastN(lastN)
-	for _, t := range lastNTracks {
-		fmt.Println(t)
+	for i, t := range lastNTracks {
+		fmt.Printf("%2d. %s", i+1, t)
+		if streamURL := t.StreamingURL(); streamURL != "" {
+			fmt.Print(" - ", streamURL)
+		}
+		fmt.Println()
 	}
 	return nil
 }
@@ -57,7 +64,12 @@ type statusResponseBody struct {
 	History      []Track `json:"history"`
 }
 
+// LastN returns the last n tracks from the status history.
+// If n is zero, then the entire history is returned.
 func (srb statusResponseBody) LastN(n uint) []Track {
+	if n == 0 {
+		return srb.History
+	}
 	if l := uint(len(srb.History)); n > l {
 		n = l
 	}
@@ -187,13 +199,10 @@ func (t Track) String() string {
 	}
 	str += t.Title
 	if d := t.PerformanceTime; !d.IsZero() {
-		str += fmt.Sprintf(" (%s)", d.Format("Mon _2-Jan-2006"))
+		str += fmt.Sprintf(" (%s)", d.Format("Mon 2-Jan-2006"))
 	}
 	if elapsed := t.Elapsed(); elapsed != 0 {
 		str += fmt.Sprintf(" (started %s)", StartedString(elapsed))
-	}
-	if streamURL := t.StreamingURL(); streamURL != "" {
-		str += "\n" + streamURL
 	}
 	return str
 }
