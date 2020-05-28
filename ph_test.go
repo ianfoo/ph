@@ -1,9 +1,118 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
+
+func TestTrack_UnmarshalJSON(t *testing.T) {
+	tt := []struct {
+		desc    string
+		payload string
+		want    Track
+		wantErr error
+	}{
+		{
+			desc:    "title and start time",
+			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)", "start_time": "2020-05-28T08:01:32+00:00"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Chalk Dust Torture",
+				StartTime:       mustParseDate("2020-05-28T08:01:32"),
+				PerformanceTime: mustParseDate("2014-07-18"),
+			},
+		},
+		{
+			desc:    "no start time",
+			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Chalk Dust Torture",
+				PerformanceTime: mustParseDate("2014-07-18"),
+			},
+		},
+		{
+			desc:    "invalid start time",
+			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)", "start_time": "invalid date"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Chalk Dust Torture",
+				PerformanceTime: mustParseDate("2014-07-18"),
+			},
+			wantErr: &time.ParseError{},
+		},
+		{
+			desc:    "has performance date (dashes)",
+			payload: `{"title": "Phish - Lushington (5-20-87)"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Lushington",
+				PerformanceTime: mustParseDate("1987-05-20"),
+			},
+		},
+		{
+			desc:    "has performance date (slashes)",
+			payload: `{"title": "Phish - Lushington (5/20/87)"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Lushington",
+				PerformanceTime: mustParseDate("1987-05-20"),
+			},
+		},
+		{
+			desc:    "has performance date (dots)",
+			payload: `{"title": "Phish - Lushington (5.20.87)"}`,
+			want: Track{
+				Band:            "Phish",
+				Title:           "Lushington",
+				PerformanceTime: mustParseDate("1987-05-20"),
+			},
+		},
+		{
+			desc:    "has date, but not performance date",
+			payload: `{"title": "Alex Grosby - The Phishsonian Hour 5-28-20"}`,
+			want: Track{
+				Band:  "Alex Grosby",
+				Title: "The Phishsonian Hour 5-28-20",
+			},
+		},
+		{
+			desc:    "no identifiable band name field",
+			payload: `{"title": "No Separator Band Foo Foo (1-1-20)"}`,
+			want: Track{
+				Title:           "No Separator Band Foo Foo",
+				PerformanceTime: mustParseDate("2020-01-01"),
+			},
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.desc, func(t *testing.T) {
+			var got Track
+			if err := json.Unmarshal([]byte(tc.payload), &got); err != nil {
+				if tc.wantErr == nil {
+					t.Fatalf("unexpected error unmarshaling JSON (test data error?): %v", err)
+					return
+				}
+				// Just compare error types here, since the only test case that should
+				// have an error is the invalid start date case, so we know it'll be a
+				// time.ParseError.
+				if want, got := reflect.TypeOf(tc.wantErr), reflect.TypeOf(err); want != got {
+					t.Fatalf("expected error of type %v, but got error of type %v: %v", want, got, err)
+					return
+				}
+			}
+			if !cmp.Equal(tc.want, got) {
+				t.Errorf("got unexpected result (-want +got):\n%s", cmp.Diff(tc.want, got))
+			}
+		})
+	}
+}
 
 func TestTrack_Elapsed(t *testing.T) {
 	dur := time.Duration(30 * time.Second)
@@ -27,47 +136,50 @@ func TestTrack_Elapsed(t *testing.T) {
 	}
 }
 
-func TestTrack_PhishinURL(t *testing.T) {
+func TestTrack_StreamingURL(t *testing.T) {
 	tt := []struct {
 		desc  string
-		title string
+		track Track
 		want  string
 	}{
 		{
-			desc:  "not Phish",
-			title: "Grateful Dead - Deal (3-26-85)",
-			want:  "",
+			desc: "no date",
+			track: Track{
+				Band:  "Phish",
+				Title: "Phish - Sigma Oasis",
+			},
+			want: "",
 		},
 		{
-			desc:  "no date",
-			title: "Phish - Sigma Oasis",
-			want:  "",
+			desc: "no band",
+			track: Track{
+				Title:           "Phish - Sigma Oasis",
+				PerformanceTime: mustParseDate("2020-01-01"),
+			},
+			want: "",
 		},
 		{
-			desc:  "invalid date",
-			title: "Phish - Lushington (5-32-87)",
-			want:  "",
+			desc: "Phish",
+			track: Track{
+				Band:            "Phish",
+				Title:           "Phish - Mercury (7-14-19)",
+				PerformanceTime: mustParseDate("2019-07-14"),
+			},
+			want: "https://relisten.net/phish/2019/07/14",
 		},
 		{
-			desc:  "has date (dashes)",
-			title: "Phish - Lushington (5-20-87)",
-			want:  "https://phish.in/1987-05-20",
-		},
-		{
-			desc:  "has date (slashes)",
-			title: "Phish - Lushington (5/20/87)",
-			want:  "https://phish.in/1987-05-20",
-		},
-		{
-			desc:  "has date (dots)",
-			title: "Phish - Lushington (5.20.87)",
-			want:  "https://phish.in/1987-05-20",
+			desc: "Grateful Dead",
+			track: Track{
+				Band:            "Grateful Dead",
+				Title:           "Grateful Dead - Deal (1985-03-26)",
+				PerformanceTime: mustParseDate("1985-03-26"),
+			},
+			want: "https://relisten.net/grateful-dead/1985/03/26",
 		},
 	}
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
-			track := Track{Title: tc.title}
-			if got := track.PhishinURL(); tc.want != got {
+			if got := tc.track.StreamingURL(); tc.want != got {
 				t.Errorf("wanted %q, but got %q", tc.want, got)
 			}
 		})
@@ -82,51 +194,37 @@ func TestTrack_String(t *testing.T) {
 		want  string
 	}{
 		{
-			desc:  "with start time",
-			track: Track{Title: "Phish - Mercury (7-14-19)", StartTime: time.Now().Add(-dur)},
-			want:  "Phish - Mercury (7-14-19) (started 1m30s ago)\nhttps://phish.in/2019-07-14",
+			desc: "with start time and performance time",
+			track: Track{
+				Band:            "Phish",
+				Title:           "Mercury",
+				StartTime:       time.Now().Add(-dur),
+				PerformanceTime: mustParseDate("2019-07-14"),
+			},
+			want: "Phish - Mercury (Sun 14-Jul-2019) (started 1m30s ago)\nhttps://relisten.net/phish/2019/07/14",
 		},
 		{
-			desc:  "no start time",
-			track: Track{Title: "Phish - Mercury (7-14-19)"},
-			want:  "Phish - Mercury (7-14-19)",
+			desc: "no start time",
+			track: Track{
+				Band:            "Phish",
+				Title:           "Mercury",
+				PerformanceTime: mustParseDate("2019-07-14"),
+			},
+			want: "Phish - Mercury (Sun 14-Jul-2019)\nhttps://relisten.net/phish/2019/07/14",
+		},
+		{
+			desc: "no performance time",
+			track: Track{
+				Band:  "Phish",
+				Title: "Mercury",
+			},
+			want: "Phish - Mercury",
 		},
 	}
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := tc.track.String(); got != tc.want {
 				t.Errorf("wanted %q, but got %q", tc.want, got)
-			}
-		})
-	}
-}
-
-func TestNewTrackFromResponseTrack(t *testing.T) {
-	tt := []responseTrack{
-		{Title: "Phish - Chalk Dust Torture (7-18-14)", StartTime: "2014-07-14T08:01:32+00:00"},
-		{Title: "Phish - Chalk Dust Torture (7-18-14)"},
-		{Title: "Phish - Chalk Dust Torture (7-18-14)", StartTime: "invalid date"},
-	}
-	for _, tc := range tt {
-		t.Run(tc.Title, func(t *testing.T) {
-			got := NewTrackFromResponseTrack(tc)
-			if got.Title != tc.Title {
-				t.Errorf("wanted title %q, but got %q", tc.Title, got.Title)
-			}
-			if tc.StartTime == "" && !got.StartTime.IsZero() {
-				t.Errorf("expected start time to be time.Time zero value, but got %v", got.StartTime)
-				return
-			}
-			date, err := time.Parse(time.RFC3339, tc.StartTime)
-			if err != nil && !got.StartTime.IsZero() {
-				t.Errorf(
-					"expected start time to be time.Time zero value with invalid source start time, "+
-						"but got %v",
-					got.StartTime)
-				return
-			}
-			if !got.StartTime.Equal(date) {
-				t.Errorf("expected start date %v, but got %v", date, got.StartTime)
 			}
 		})
 	}
@@ -154,4 +252,19 @@ func TestStartedString(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustParseDate(dateStr string) time.Time {
+	if strings.Index(dateStr, "T") == -1 {
+		dateStr += "T00:00:00"
+	}
+	if strings.Index(dateStr, "+") == -1 {
+		dateStr += "+00:00"
+	}
+	d, err := time.Parse(time.RFC3339, dateStr)
+	if err != nil {
+		panic(fmt.Sprintf("unable to parse test date %q: %v", dateStr, err))
+		return time.Time{}
+	}
+	return d
 }
