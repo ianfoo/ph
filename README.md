@@ -19,7 +19,7 @@ https://relisten.net/phish/2019/07/14
 ```
 
 The output will be compressed onto a single line to help the readability of the
-list when showing history. Track histories do contain the time when the track
+list when showing history. Track histories do not contain the time when the track
 started playing.
 ```
 ❯ ph -last 5
@@ -36,5 +36,6 @@ You will need [Go](https://golang.org) to build or run this. You can install
 this as a binary with `go install .` run in this working directory.
 
 ## TODO
-* Scrub "www.jempradio.com - JEMP Radio" from track history
+* Scrub "www.jempradio.com - JEMP Radio" from track history?
+* Additional regexp formats to parse JEMP Radio Full Show Fridays (e.g., "Phish - 5-28-89 Set 2 (Hebron, NY)")
 * Poll occasionally and record data to a database for analysis

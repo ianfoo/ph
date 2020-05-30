@@ -2,20 +2,38 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	flag "github.com/spf13/pflag"
+	"gopkg.in/yaml.v2"
 )
 
-const urlJEMP = "https://public.radio.co/stations/sd71de59b3/status"
+const (
+	urlJEMP = "https://public.radio.co/stations/sd71de59b3/status"
+
+	patJEMPDate         = `(?P<date>\d{1,2}(?P<separator>[-./])\d{1,2}[-./]\d{2})`
+	patJEMPRegularTrack = `(?P<artist>.+)\s+-\s+(?P<title>.+) (?:\(` + patJEMPDate + `\))?`
+	patJEMPFullShow     = `(?P<artist>.+)\s+-\s+` + patJEMPDate + `\s+(?P<set>(?:Set \d+(?:\s?\+\s?E)?)|Encore)\s+\((?P<location>.+)\)`
+)
+
+// zeros regexp detects cases zero-value units in duration strings, so
+// that, for example, the duration "1h0m30s," as would be rendered by
+// default, can be presented more compactly as "1h30s."
+var zeroes = regexp.MustCompile(`(?:^|(\D))0[hms]`)
 
 var (
-	zeroes   = regexp.MustCompile(`(?:^|(\D))0[hms]`)
-	jempDate = regexp.MustCompile(`\((\d{1,2}(?P<separator>[-./])\d{1,2}[-./]\d{2})\)$`)
+	jempDate       = regexp.MustCompile(`\((` + patJEMPDate + `)\)$`)
+	regexJEMPTrack = []*regexp.Regexp{
+		regexp.MustCompile(patJEMPRegularTrack),
+		regexp.MustCompile(patJEMPFullShow),
+	}
 )
 
 func main() {
@@ -27,10 +45,20 @@ func main() {
 }
 
 func run() error {
-	var lastN uint
-	flag.UintVar(&lastN, "last", 1, "Show this many latest songs (0 shows entire available history)")
+	var (
+		lastN   uint
+		history bool
+		format  string
+	)
+	flag.UintVarP(&lastN, "last", "l", 1, "Show this many latest songs")
+	flag.BoolVarP(&history, "history", "h", false, "Show entire available history")
+	flag.StringVarP(&format, "format", "f", "text", "output format (text, json, yaml)")
 	flag.Parse()
 
+	writeOutput, err := getRenderer(format)
+	if err != nil {
+		return err
+	}
 	resp, err := http.Get(urlJEMP)
 	if err != nil {
 		return fmt.Errorf("get JEMP Radio status: %w", err)
@@ -41,32 +69,27 @@ func run() error {
 		return fmt.Errorf("parsing status response: %w", err)
 	}
 
+	if history {
+		writeOutput(status.History)
+		return nil
+	}
 	if lastN == 1 {
-		fmt.Println(status.CurrentTrack)
-		if streamURL := status.CurrentTrack.StreamingURL(); streamURL != "" {
-			fmt.Println(streamURL)
-		}
+		writeOutput(status.CurrentTrack)
 		return nil
 	}
 	lastNTracks := status.LastN(lastN)
-	for i, t := range lastNTracks {
-		fmt.Printf("%2d. %s", i+1, t)
-		if streamURL := t.StreamingURL(); streamURL != "" {
-			fmt.Print(" - ", streamURL)
-		}
-		fmt.Println()
-	}
+	writeOutput(lastNTracks)
 	return nil
 }
 
 type statusResponseBody struct {
-	CurrentTrack Track   `json:"current_track"`
-	History      []Track `json:"history"`
+	CurrentTrack Track     `json:"current_track"`
+	History      TrackList `json:"history"`
 }
 
 // LastN returns the last n tracks from the status history.
 // If n is zero, then the entire history is returned.
-func (srb statusResponseBody) LastN(n uint) []Track {
+func (srb statusResponseBody) LastN(n uint) TrackList {
 	if n == 0 {
 		return srb.History
 	}
@@ -76,9 +99,64 @@ func (srb statusResponseBody) LastN(n uint) []Track {
 	return srb.History[:n]
 }
 
+type TrackList []Track
+
+// String renders the tracklist as a text table.
+func (tl TrackList) String() string {
+	if len(tl) == 0 {
+		return ""
+	}
+	const (
+		headingArtist         = "ARTIST"
+		headingTitle          = "TITLE"
+		headingPeformanceTime = "PERFORMED ON"
+		headlingStreamingURL  = "STREAM"
+	)
+	const (
+		dateFormat = "Mon _2-Jan-2006"
+		maxLenDate = len(dateFormat) + 1
+	)
+	var (
+		maxLenArtist = len(headingArtist)
+		maxLenTitle  = len(headingTitle)
+	)
+	for _, t := range tl {
+		if l := len(t.Artist); l > maxLenArtist {
+			maxLenArtist = l
+		}
+		if l := len(t.Title); l > maxLenTitle {
+			maxLenTitle = l
+		}
+	}
+	var (
+		numTracks     = float64(len(tl))
+		maxLenIndex   = int(math.Ceil(math.Log10(numTracks)))
+		baseFormat    = fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%s\n", maxLenArtist, maxLenTitle, maxLenDate)
+		headingFormat = strings.Repeat(" ", maxLenIndex+1) + baseFormat
+		itemFormat    = fmt.Sprintf("%%%dd %s", maxLenIndex, baseFormat)
+
+		builder strings.Builder
+	)
+	builder.WriteString(fmt.Sprintf(
+		headingFormat,
+		headingArtist,
+		headingTitle,
+		headingPeformanceTime,
+		headlingStreamingURL))
+	for i, t := range tl {
+		var perfTimeStr string
+		if pt := t.PerformanceTime; !pt.IsZero() {
+			perfTimeStr = pt.Format(dateFormat)
+		}
+		builder.WriteString(fmt.Sprintf(itemFormat, i+1, t.Artist, t.Title, perfTimeStr, t.StreamingURL()))
+	}
+	s := builder.String()
+	return s[:len(s)-1]
+}
+
 // Track represents a track being played on radio.co.
 type Track struct {
-	Band            string    `json:"band,omitempty"`
+	Artist          string    `json:"artist,omitempty"`
 	Title           string    `json:"title"`
 	StartTime       time.Time `json:"start_time,omitempty"`
 	PerformanceTime time.Time `json:"performance_time,omitempty"`
@@ -94,13 +172,14 @@ func (t *Track) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &respTrack); err != nil {
 		return err
 	}
-	t.Title = respTrack.Title
-	t.maybeSetPerformanceTime()
-	bandSplit := strings.SplitN(t.Title, " - ", 2)
-	if len(bandSplit) == 2 {
-		t.Band = bandSplit[0]
-		t.Title = bandSplit[1]
-	}
+	t.parseRawTitle(respTrack.Title)
+	// t.Title = respTrack.Title
+	// t.maybeSetPerformanceTime()
+	// artistSplit := strings.SplitN(t.Title, " - ", 2)
+	// if len(artistSplit) == 2 {
+	//     t.Artist = artistSplit[0]
+	//     t.Title = artistSplit[1]
+	// }
 
 	if respTrack.StartTime == "" {
 		return nil
@@ -139,6 +218,67 @@ func (t *Track) maybeSetPerformanceTime() {
 	t.Title = strings.TrimSpace(newTitle)
 }
 
+func (t *Track) parseRawTitle(title string) {
+	var (
+		matches       []string
+		matchedRegexp *regexp.Regexp
+	)
+	for _, re := range regexJEMPTrack {
+		m := re.FindStringSubmatch(title)
+		if len(m) > 1 {
+			matches = m
+			matchedRegexp = re
+			break
+		}
+	}
+
+	// Didn't match any of our expected formats.
+	if matchedRegexp == nil {
+		t.Title = title
+		return
+	}
+	var (
+		perfTimeStr string
+		perfTimeSep string
+		location    string
+		set         string
+	)
+	for i, subexp := range matchedRegexp.SubexpNames() {
+		switch subexp {
+		case "artist":
+			t.Artist = strings.TrimSpace(matches[i])
+		case "title":
+			t.Title = strings.TrimSpace(matches[i])
+		case "date":
+			perfTimeStr = matches[i]
+		case "separator":
+			perfTimeSep = matches[i]
+		case "location":
+			location = strings.TrimSpace(matches[i])
+		case "set":
+			set = strings.TrimSpace(matches[i])
+		}
+	}
+	if perfTimeStr != "" && perfTimeSep != "" {
+		parseFormat := fmt.Sprintf("1%s2%s06", perfTimeSep, perfTimeSep)
+		perfTime, err := time.Parse(parseFormat, perfTimeStr)
+		if err == nil {
+			t.PerformanceTime = perfTime
+		}
+	}
+
+	// We are finished if this is not a full show title.
+	if set == "" || t.PerformanceTime.IsZero() {
+		return
+	}
+	perfTimeStr = t.PerformanceTime.Format("2-Jan-2006")
+	if location != "" {
+		t.Title = perfTimeStr + " " + location + " " + set
+		return
+	}
+	t.Title = perfTimeStr + " " + set
+}
+
 // Elapsed returns a duration indicating how long ago playback of the track
 // started if the track has a start time. If it does not, then a zero duration
 // is returned.
@@ -154,12 +294,12 @@ func (t Track) Elapsed() time.Duration {
 // selected bands. There is no guarantee that the link will refer to a valid
 // show, since it is possible that a given show is not available for streaming.
 func (t Track) StreamingURL() string {
-	if t.Band == "" || t.PerformanceTime.IsZero() {
+	if t.Artist == "" || t.PerformanceTime.IsZero() {
 		return ""
 	}
 	streamableAs := func() (string, bool) {
 		// Bands is a set of bands that are commonly played on JEMP Radio that
-		// are available for streaming via ReListen. The map values are the URL
+		// are available for streaming via Relisten. The map values are the URL
 		// path element that corresponds to the band's name that appears in the
 		// track title. Unfortunately, I cannot find an easily-linkable
 		// streaming source for Trey Anastasio Band or Jerry Garcia Band, which
@@ -176,7 +316,7 @@ func (t Track) StreamingURL() string {
 			"Steve Kimock Band":       "steve-kimock-band",
 			"Widespread Panic":        "wsp",
 		}
-		path, ok := bands[t.Band]
+		path, ok := bands[t.Artist]
 		return path, ok
 	}
 	bandPathElem, streamable := streamableAs()
@@ -193,7 +333,7 @@ func (t Track) StreamingURL() string {
 // String returns a string representation of a track, including the title,
 // and--if a start time is defined--how long ago the track started playing.
 func (t Track) String() string {
-	str := t.Band
+	str := t.Artist
 	if str != "" {
 		str += " - "
 	}
@@ -203,6 +343,9 @@ func (t Track) String() string {
 	}
 	if elapsed := t.Elapsed(); elapsed != 0 {
 		str += fmt.Sprintf(" (started %s)", StartedString(elapsed))
+	}
+	if stream := t.StreamingURL(); stream != "" {
+		str += "\n" + stream
 	}
 	return str
 }
@@ -215,4 +358,27 @@ func StartedString(d time.Duration) string {
 		return dstr + " ago"
 	}
 	return "just now"
+}
+
+func getRenderer(format string) (func(interface{}) error, error) {
+	switch format {
+	case "text":
+		f := func(v interface{}) error {
+			_, err := fmt.Println(v)
+			return err
+		}
+		return f, nil
+	case "json":
+		f := func(v interface{}) error {
+			return json.NewEncoder(os.Stdout).Encode(v)
+		}
+		return f, nil
+	case "yaml":
+		f := func(v interface{}) error {
+			return yaml.NewEncoder(os.Stdout).Encode(v)
+		}
+		return f, nil
+	default:
+		return nil, fmt.Errorf("invalid output format %q", format)
+	}
 }

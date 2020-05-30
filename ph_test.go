@@ -22,7 +22,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "title and start time",
 			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)", "start_time": "2020-05-28T08:01:32+00:00"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Chalk Dust Torture",
 				StartTime:       mustParseDate("2020-05-28T08:01:32"),
 				PerformanceTime: mustParseDate("2014-07-18"),
@@ -32,7 +32,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "no start time",
 			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Chalk Dust Torture",
 				PerformanceTime: mustParseDate("2014-07-18"),
 			},
@@ -41,7 +41,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "invalid start time",
 			payload: `{"title": "Phish - Chalk Dust Torture (7-18-14)", "start_time": "invalid date"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Chalk Dust Torture",
 				PerformanceTime: mustParseDate("2014-07-18"),
 			},
@@ -51,7 +51,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "has performance date (dashes)",
 			payload: `{"title": "Phish - Lushington (5-20-87)"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Lushington",
 				PerformanceTime: mustParseDate("1987-05-20"),
 			},
@@ -60,7 +60,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "has performance date (slashes)",
 			payload: `{"title": "Phish - Lushington (5/20/87)"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Lushington",
 				PerformanceTime: mustParseDate("1987-05-20"),
 			},
@@ -69,7 +69,7 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "has performance date (dots)",
 			payload: `{"title": "Phish - Lushington (5.20.87)"}`,
 			want: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Lushington",
 				PerformanceTime: mustParseDate("1987-05-20"),
 			},
@@ -78,12 +78,12 @@ func TestTrack_UnmarshalJSON(t *testing.T) {
 			desc:    "has date, but not performance date",
 			payload: `{"title": "Alex Grosby - The Phishsonian Hour 5-28-20"}`,
 			want: Track{
-				Band:  "Alex Grosby",
-				Title: "The Phishsonian Hour 5-28-20",
+				Artist: "Alex Grosby",
+				Title:  "The Phishsonian Hour 5-28-20",
 			},
 		},
 		{
-			desc:    "no identifiable band name field",
+			desc:    "no identifiable artist name field",
 			payload: `{"title": "No Separator Band Foo Foo (1-1-20)"}`,
 			want: Track{
 				Title:           "No Separator Band Foo Foo",
@@ -145,13 +145,13 @@ func TestTrack_StreamingURL(t *testing.T) {
 		{
 			desc: "no date",
 			track: Track{
-				Band:  "Phish",
-				Title: "Phish - Sigma Oasis",
+				Artist: "Phish",
+				Title:  "Phish - Sigma Oasis",
 			},
 			want: "",
 		},
 		{
-			desc: "no band",
+			desc: "no artist",
 			track: Track{
 				Title:           "Phish - Sigma Oasis",
 				PerformanceTime: mustParseDate("2020-01-01"),
@@ -161,7 +161,7 @@ func TestTrack_StreamingURL(t *testing.T) {
 		{
 			desc: "Phish",
 			track: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Phish - Mercury (7-14-19)",
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
@@ -170,7 +170,7 @@ func TestTrack_StreamingURL(t *testing.T) {
 		{
 			desc: "Grateful Dead",
 			track: Track{
-				Band:            "Grateful Dead",
+				Artist:          "Grateful Dead",
 				Title:           "Grateful Dead - Deal (1985-03-26)",
 				PerformanceTime: mustParseDate("1985-03-26"),
 			},
@@ -196,7 +196,7 @@ func TestTrack_String(t *testing.T) {
 		{
 			desc: "with start time and performance time",
 			track: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Mercury",
 				StartTime:       time.Now().Add(-dur),
 				PerformanceTime: mustParseDate("2019-07-14"),
@@ -206,7 +206,7 @@ func TestTrack_String(t *testing.T) {
 		{
 			desc: "no start time",
 			track: Track{
-				Band:            "Phish",
+				Artist:          "Phish",
 				Title:           "Mercury",
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
@@ -215,13 +215,13 @@ func TestTrack_String(t *testing.T) {
 		{
 			desc: "no performance time",
 			track: Track{
-				Band:  "Phish",
-				Title: "Mercury",
+				Artist: "Phish",
+				Title:  "Mercury",
 			},
 			want: "Phish - Mercury",
 		},
 		{
-			desc:  "no band name",
+			desc:  "no artist name",
 			track: Track{Title: "Dogs Stole Things"},
 			want:  "Dogs Stole Things",
 		},
