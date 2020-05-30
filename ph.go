@@ -330,6 +330,15 @@ func (t Track) StreamingURL() string {
 	return url
 }
 
+// PhishNetURL returns a URL pointing to the setlist on phish.net for the show
+// that this track is from, if the track is a live Phish track.
+func (t Track) PhishNetURL() string {
+	if t.Artist != "Phish" || t.PerformanceTime.IsZero() {
+		return ""
+	}
+	return "https://phish.net/setlists/?d=" + t.PerformanceTime.Format("2006-01-02")
+}
+
 // String returns a string representation of a track, including the title,
 // and--if a start time is defined--how long ago the track started playing.
 func (t Track) String() string {
@@ -346,6 +355,9 @@ func (t Track) String() string {
 	}
 	if stream := t.StreamingURL(); stream != "" {
 		str += "\n" + stream
+	}
+	if pnet := t.PhishNetURL(); pnet != "" {
+		str += "\n" + pnet
 	}
 	return str
 }
