@@ -259,6 +259,55 @@ func TestStartedString(t *testing.T) {
 	}
 }
 
+func TestTrackList_FilterArtist(t *testing.T) {
+	tt := []struct {
+		desc       string
+		in         TrackList
+		filterFunc func(string) bool
+		want       TrackList
+	}{
+		{
+			desc: "Phish only",
+			in: TrackList{
+				Track{Artist: "Phish"},
+				Track{Artist: "Grateful Dead"},
+				Track{Artist: "Phish"},
+			},
+			filterFunc: func(s string) bool {
+				return s == "Phish"
+			},
+			want: TrackList{
+				Track{Artist: "Phish"},
+				Track{Artist: "Phish"},
+			},
+		},
+		{
+			desc: "Exclude JEMP Radio meta-tracks",
+			in: TrackList{
+				Track{Artist: "Phish"},
+				Track{Artist: "www.jempradio.com"},
+				Track{Artist: "jempradio.com"},
+				Track{Artist: "Phish"},
+			},
+			filterFunc: func(s string) bool {
+				return s != "jempradio.com" && s != "www.jempradio.com"
+			},
+			want: TrackList{
+				Track{Artist: "Phish"},
+				Track{Artist: "Phish"},
+			},
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := tc.in.FilterArtist(tc.filterFunc)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("wanted %v but got %v", tc.want, got)
+			}
+		})
+	}
+}
+
 func mustParseDate(dateStr string) time.Time {
 	if strings.Index(dateStr, "T") == -1 {
 		dateStr += "T00:00:00"

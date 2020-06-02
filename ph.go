@@ -19,8 +19,10 @@ const (
 	urlJEMP = "https://public.radio.co/stations/sd71de59b3/status"
 
 	patJEMPDate         = `(?P<date>\d{1,2}(?P<separator>[-./])\d{1,2}[-./]\d{2})`
-	patJEMPRegularTrack = `(?P<artist>.+)\s+-\s+(?P<title>.+) (?:\(` + patJEMPDate + `\))?`
-	patJEMPFullShow     = `(?P<artist>.+)\s+-\s+` + patJEMPDate + `\s+(?P<set>(?:Set \d+(?:\s?\+\s?E)?)|Encore)\s+\((?P<location>.+)\)`
+	patJEMPRegularTrack = `^(?P<artist>.+)\s+-\s+(?P<title>.+?)(?:\s+\(` + patJEMPDate + `(?:\s+(?P<location>.+))?\))?$`
+	patJEMPFullShow     = `^(?P<artist>.+)\s+-\s+` + patJEMPDate +
+		`\s+(?P<set>(?:Set \d+(?:\s?\+\s?E)?)|Encore)\s+\((?P<location>.+)\)$`
+	patJEMPStationArtist = `^(?:www\.)?jempradio\.com`
 )
 
 // zeros regexp detects cases zero-value units in duration strings, so
@@ -29,10 +31,14 @@ const (
 var zeroes = regexp.MustCompile(`(?:^|(\D))0[hms]`)
 
 var (
-	jempDate       = regexp.MustCompile(`\((` + patJEMPDate + `)\)$`)
+	jempDate         = regexp.MustCompile(`\((` + patJEMPDate + `)\)$`)
+	jempStationBreak = regexp.MustCompile(patJEMPStationArtist)
+
+	// Order is important! Consider "studio track" a fallthrough that will
+	// match anything not matched by the previous expressions.
 	regexJEMPTrack = []*regexp.Regexp{
-		regexp.MustCompile(patJEMPRegularTrack),
 		regexp.MustCompile(patJEMPFullShow),
+		regexp.MustCompile(patJEMPRegularTrack),
 	}
 )
 
@@ -51,7 +57,7 @@ func run() error {
 		format  string
 	)
 	flag.UintVarP(&lastN, "last", "l", 1, "Show this many latest songs")
-	flag.BoolVarP(&history, "history", "h", false, "Show entire available history")
+	flag.BoolVar(&history, "history", false, "Show entire available history")
 	flag.StringVarP(&format, "format", "f", "text", "output format (text, json, yaml)")
 	flag.Parse()
 
@@ -69,15 +75,19 @@ func run() error {
 		return fmt.Errorf("parsing status response: %w", err)
 	}
 
-	if history {
-		writeOutput(status.History)
-		return nil
-	}
+	// NOTE Current track might be a JEMP station break.
 	if lastN == 1 {
 		writeOutput(status.CurrentTrack)
 		return nil
 	}
-	lastNTracks := status.LastN(lastN)
+
+	noJEMPStationBreaks := func(artist string) bool {
+		return !jempStationBreak.MatchString(artist)
+	}
+	if history {
+		lastN = 0
+	}
+	lastNTracks := status.History.FilterArtist(noJEMPStationBreaks).LastN(lastN)
 	writeOutput(lastNTracks)
 	return nil
 }
@@ -87,19 +97,31 @@ type statusResponseBody struct {
 	History      TrackList `json:"history"`
 }
 
-// LastN returns the last n tracks from the status history.
-// If n is zero, then the entire history is returned.
-func (srb statusResponseBody) LastN(n uint) TrackList {
+type TrackList []Track
+
+// LastN returns the last n tracks from the TrackList. If n is zero, then the
+// entire TrackList is returned.
+func (tl TrackList) LastN(n uint) TrackList {
 	if n == 0 {
-		return srb.History
+		return tl
 	}
-	if l := uint(len(srb.History)); n > l {
+	if l := uint(len(tl)); n > l {
 		n = l
 	}
-	return srb.History[:n]
+	return tl[:n]
 }
 
-type TrackList []Track
+// FilterArtist will return a TrackList of those tracks for which filterFunc
+// returns true when passed the artist name.
+func (tl TrackList) FilterArtist(filterFunc func(string) bool) TrackList {
+	out := make(TrackList, 0, len(tl))
+	for _, t := range tl {
+		if filterFunc(t.Artist) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // String renders the tracklist as a text table.
 func (tl TrackList) String() string {
@@ -130,7 +152,7 @@ func (tl TrackList) String() string {
 	}
 	var (
 		numTracks     = float64(len(tl))
-		maxLenIndex   = int(math.Ceil(math.Log10(numTracks)))
+		maxLenIndex   = int(math.Floor(math.Log10(numTracks))) + 1
 		baseFormat    = fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%s\n", maxLenArtist, maxLenTitle, maxLenDate)
 		headingFormat = strings.Repeat(" ", maxLenIndex+1) + baseFormat
 		itemFormat    = fmt.Sprintf("%%%dd %s", maxLenIndex, baseFormat)
@@ -158,8 +180,8 @@ func (tl TrackList) String() string {
 type Track struct {
 	Artist          string    `json:"artist,omitempty"`
 	Title           string    `json:"title"`
-	StartTime       time.Time `json:"start_time,omitempty"`
-	PerformanceTime time.Time `json:"performance_time,omitempty"`
+	StartTime       time.Time `json:"start_time,omitempty" yaml:"start_time,omitempty"`
+	PerformanceTime time.Time `json:"performance_time,omitempty" yaml:"performance_time,omitempty"`
 }
 
 // UnmarshalJSON implementes json.Unmarshaler in order to handle
@@ -173,13 +195,6 @@ func (t *Track) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	t.parseRawTitle(respTrack.Title)
-	// t.Title = respTrack.Title
-	// t.maybeSetPerformanceTime()
-	// artistSplit := strings.SplitN(t.Title, " - ", 2)
-	// if len(artistSplit) == 2 {
-	//     t.Artist = artistSplit[0]
-	//     t.Title = artistSplit[1]
-	// }
 
 	if respTrack.StartTime == "" {
 		return nil
@@ -190,32 +205,6 @@ func (t *Track) UnmarshalJSON(b []byte) error {
 	}
 	t.StartTime = startTime
 	return nil
-}
-
-// maybeSetPerformanceTime will set the PerformanceTime field if a recognizable
-// performance date can be be located in the track title, in accordance with
-// the convention JEMP Radio uses to render performance dates into track
-// titles. If a performance date is found, it is removed from the title since
-// it's then stored in the PerformanceTime field.
-func (t *Track) maybeSetPerformanceTime() {
-	matches := jempDate.FindStringSubmatch(t.Title)
-	if len(matches) == 0 {
-		return
-	}
-	const jempDateParseFormatTemplate = "1%s2%s06"
-	var (
-		dateStr     = matches[1]
-		separator   = matches[2]
-		parseFormat = fmt.Sprintf(jempDateParseFormatTemplate, separator, separator)
-	)
-	date, err := time.Parse(parseFormat, dateStr)
-	if err != nil {
-		// Just don't set the performance time if there's any trouble parsing it.
-		return
-	}
-	t.PerformanceTime = date
-	newTitle := jempDate.ReplaceAllString(t.Title, "")
-	t.Title = strings.TrimSpace(newTitle)
 }
 
 func (t *Track) parseRawTitle(title string) {
