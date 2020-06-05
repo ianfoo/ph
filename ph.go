@@ -75,6 +75,9 @@ func run() error {
 		return fmt.Errorf("parsing status response: %w", err)
 	}
 
+	if history {
+		lastN = 0
+	}
 	// NOTE Current track might be a JEMP station break.
 	if lastN == 1 {
 		writeOutput(status.CurrentTrack)
@@ -83,9 +86,6 @@ func run() error {
 
 	noJEMPStationBreaks := func(artist string) bool {
 		return !jempStationBreak.MatchString(artist)
-	}
-	if history {
-		lastN = 0
 	}
 	lastNTracks := status.History.FilterArtist(noJEMPStationBreaks).LastN(lastN)
 	writeOutput(lastNTracks)
