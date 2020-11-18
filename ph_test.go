@@ -201,7 +201,9 @@ func TestTrack_String(t *testing.T) {
 				StartTime:       time.Now().Add(-dur),
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
-			want: "Phish - Mercury (Sun 14-Jul-2019) (started 1m30s ago)",
+			want: "Phish - Mercury (Sun 14-Jul-2019) (started 1m30s ago)\n" +
+				"https://relisten.net/phish/2019/07/14\n" +
+				"https://phish.net/setlists/?d=2019-07-14",
 		},
 		{
 			desc: "no start time",
@@ -210,7 +212,9 @@ func TestTrack_String(t *testing.T) {
 				Title:           "Mercury",
 				PerformanceTime: mustParseDate("2019-07-14"),
 			},
-			want: "Phish - Mercury (Sun 14-Jul-2019)",
+			want: "Phish - Mercury (Sun 14-Jul-2019)\n" +
+				"https://relisten.net/phish/2019/07/14\n" +
+				"https://phish.net/setlists/?d=2019-07-14",
 		},
 		{
 			desc: "no performance time",
@@ -309,16 +313,15 @@ func TestTrackList_FilterArtist(t *testing.T) {
 }
 
 func mustParseDate(dateStr string) time.Time {
-	if strings.Index(dateStr, "T") == -1 {
+	if !strings.Contains(dateStr, "T") {
 		dateStr += "T00:00:00"
 	}
-	if strings.Index(dateStr, "+") == -1 {
+	if !strings.Contains(dateStr, "+") {
 		dateStr += "+00:00"
 	}
 	d, err := time.Parse(time.RFC3339, dateStr)
 	if err != nil {
 		panic(fmt.Sprintf("unable to parse test date %q: %v", dateStr, err))
-		return time.Time{}
 	}
 	return d
 }

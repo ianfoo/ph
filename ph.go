@@ -19,7 +19,7 @@ const (
 	urlJEMP = "https://public.radio.co/stations/sd71de59b3/status"
 
 	patJEMPDate         = `(?P<date>\d{1,2}(?P<separator>[-./])\d{1,2}[-./]\d{2})`
-	patJEMPRegularTrack = `^(?P<artist>.+)\s+-\s+(?P<title>.+?)(?:\s+\(` + patJEMPDate + `(?:\s+(?P<location>.+))?\))?$`
+	patJEMPRegularTrack = `^((?P<artist>.+)\s+-\s+)?(?P<title>.+?)(?:\s+\(` + patJEMPDate + `(?:\s+(?P<location>.+))?\))?$`
 	patJEMPFullShow     = `^(?P<artist>.+)\s+-\s+` + patJEMPDate +
 		`\s+(?P<set>(?:Set \d+(?:\s?\+\s?E)?)|Encore)\s+\((?P<location>.+)\)$`
 	patJEMPStationArtist = `^(?:www\.)?jempradio\.com`
@@ -31,7 +31,8 @@ const (
 var zeroes = regexp.MustCompile(`(?:^|(\D))0[hms]`)
 
 var (
-	jempDate         = regexp.MustCompile(`\((` + patJEMPDate + `)\)$`)
+	// jempStationBreak matches text that likely indicates a JEMP station break,
+	// such as the hourly-ish announcements and ads.
 	jempStationBreak = regexp.MustCompile(patJEMPStationArtist)
 
 	// Order is important! Consider "studio track" a fallthrough that will
