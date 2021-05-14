@@ -42,7 +42,12 @@ var (
 	}
 )
 
+// relistenArtists is used to determine whether a track can be streamed,
+// and if so, to build a streaming URL for the track.
+var relistenArtists map[string]string
+
 func main() {
+	log.SetFlags(0)
 	if err := run(); err != nil {
 		log.SetPrefix("error: ")
 		log.SetFlags(0)
@@ -51,6 +56,11 @@ func main() {
 }
 
 func run() error {
+	var err error
+	relistenArtists, err = relistenGetArtists(http.DefaultClient)
+	if err != nil {
+		log.Printf("warning: unable to get Relisten artists: %v", err)
+	}
 	var (
 		lastN   uint
 		history bool
@@ -286,29 +296,7 @@ func (t Track) StreamingURL() string {
 	if t.Artist == "" || t.PerformanceTime.IsZero() {
 		return ""
 	}
-	streamableAs := func() (string, bool) {
-		// Bands is a set of bands that are commonly played on JEMP Radio that
-		// are available for streaming via Relisten. The map values are the URL
-		// path element that corresponds to the band's name that appears in the
-		// track title. Unfortunately, I cannot find an easily-linkable
-		// streaming source for Trey Anastasio Band or Jerry Garcia Band, which
-		// get a fair amount of play on JEMP Radio.
-		bands := map[string]string{
-			"Goose":                   "goose",
-			"Grateful Dead":           "grateful-dead",
-			"Joe Russo's Almost Dead": "jrad",
-			"JRAD":                    "jrad",
-			"KVHW":                    "kvhw",
-			"Phish":                   "phish",
-			"Spafford":                "spafford",
-			"Steve Kimock":            "steve-kimock",
-			"Steve Kimock Band":       "steve-kimock-band",
-			"Widespread Panic":        "wsp",
-		}
-		path, ok := bands[t.Artist]
-		return path, ok
-	}
-	bandPathElem, streamable := streamableAs()
+	bandPathElem, streamable := relistenArtists[t.Artist]
 	if !streamable {
 		return ""
 	}
