@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -177,9 +178,15 @@ func TestTrack_StreamingURL(t *testing.T) {
 			want: "https://relisten.net/grateful-dead/1985/03/26",
 		},
 	}
+	// TODO Use a locally-persisted "golden" copy of the artists map.
+	// TODO Make an artists map from a byte slice, to decouple it from the HTTP client.
+	relistenArtists, err := relistenGetArtists(http.DefaultClient)
+	if err != nil {
+		t.Fatalf("unable to get relisten artists: %v", err)
+	}
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := tc.track.StreamingURL(); tc.want != got {
+			if got := tc.track.StreamingURL(relistenArtists); tc.want != got {
 				t.Errorf("wanted %q, but got %q", tc.want, got)
 			}
 		})
@@ -229,6 +236,14 @@ func TestTrack_String(t *testing.T) {
 			track: Track{Title: "Dogs Stole Things"},
 			want:  "Dogs Stole Things",
 		},
+	}
+
+	// TODO Get rid of the package-level variable for relistenArtists.
+	// Allow tracks to be stringified without it.
+	var err error
+	relistenArtists, err = relistenGetArtists(http.DefaultClient)
+	if err != nil {
+		t.Fatalf("unable to get relisten artists: %v", err)
 	}
 	for _, tc := range tt {
 		t.Run(tc.desc, func(t *testing.T) {

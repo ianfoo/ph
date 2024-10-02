@@ -18,6 +18,7 @@ import (
 const (
 	urlJEMP = "https://public.radio.co/stations/sd71de59b3/status"
 
+	// TODO Update Date to account for "extra information" that now shows inside the parentheses
 	patJEMPDate         = `(?P<date>\d{1,2}(?P<separator>[-./])\d{1,2}[-./]\d{2})`
 	patJEMPRegularTrack = `^((?P<artist>.+)\s+-\s+)?(?P<title>.+?)(?:\s+\(` + patJEMPDate + `(?:\s+(?P<location>.+))?\))?$`
 	patJEMPFullShow     = `^(?P<artist>.+)\s+-\s+` + patJEMPDate +
@@ -124,10 +125,16 @@ func (tl TrackList) LastN(n uint) TrackList {
 
 // FilterArtist will return a TrackList of those tracks for which filterFunc
 // returns true when passed the artist name.
-func (tl TrackList) FilterArtist(filterFunc func(string) bool) TrackList {
+func (tl TrackList) FilterArtist(filterFuncs ...func(string) bool) TrackList {
 	out := make(TrackList, 0, len(tl))
 	for _, t := range tl {
-		if filterFunc(t.Artist) {
+		appendTrack := true
+		for _, currentFilter := range filterFuncs {
+			if !currentFilter(t.Artist) {
+				appendTrack = false
+			}
+		}
+		if appendTrack {
 			out = append(out, t)
 		}
 	}
@@ -181,7 +188,14 @@ func (tl TrackList) String() string {
 		if pt := t.PerformanceTime; !pt.IsZero() {
 			perfTimeStr = pt.Format(dateFormat)
 		}
-		builder.WriteString(fmt.Sprintf(itemFormat, i+1, t.Artist, t.Title, perfTimeStr, t.StreamingURL()))
+		builder.WriteString(fmt.Sprintf(
+			itemFormat,
+			i+1,
+			t.Artist,
+			t.Title,
+			perfTimeStr,
+			t.StreamingURL(relistenArtists)),
+		)
 	}
 	s := builder.String()
 	return s[:len(s)-1]
@@ -293,7 +307,7 @@ func (t Track) Elapsed() time.Duration {
 // show, if the track has a perfomance date set and the band is one of a set of
 // selected bands. There is no guarantee that the link will refer to a valid
 // show, since it is possible that a given show is not available for streaming.
-func (t Track) StreamingURL() string {
+func (t Track) StreamingURL(relistenArtists map[string]string) string {
 	if t.Artist == "" || t.PerformanceTime.IsZero() {
 		return ""
 	}
@@ -331,7 +345,7 @@ func (t Track) String() string {
 	if elapsed := t.Elapsed(); elapsed != 0 {
 		str += fmt.Sprintf(" (started %s)", StartedString(elapsed))
 	}
-	if stream := t.StreamingURL(); stream != "" {
+	if stream := t.StreamingURL(relistenArtists); stream != "" {
 		str += "\n" + stream
 	}
 	if pnet := t.PhishNetURL(); pnet != "" {
